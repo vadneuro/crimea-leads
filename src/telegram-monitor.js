@@ -166,9 +166,13 @@ export async function startTelegramMonitor() {
   const sessionStr = existsSync(SESSION_FILE) ? readFileSync(SESSION_FILE, 'utf8').trim() : '';
   const session = new StringSession(sessionStr);
 
+  // USE_WARP_PROXY=1 routes through Cloudflare WARP SOCKS5 on port 40000
+  // Required on Beget VPS where Telegram MTProto is blocked by DPI
+  const useProxy = process.env.USE_WARP_PROXY === '1';
   const client = new TelegramClient(session, apiId, apiHash, {
     connectionRetries: 5,
     useWSS: false,
+    ...(useProxy ? { proxy: { socksType: 5, ip: '127.0.0.1', port: 40000, timeout: 2 } } : {}),
   });
 
   await client.start({
