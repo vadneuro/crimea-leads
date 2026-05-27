@@ -5,23 +5,14 @@ import { saveLead } from './database.js';
 import { notify } from './notifier.js';
 
 const HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   'Accept-Language': 'ru-RU,ru;q=0.9',
-  'Accept': 'text/html,application/xhtml+xml',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
 };
 
-async function parseRestate() {
-  // restate.ru returns HTTP 403 for automated requests — disabled
-}
-
-async function parseMoveRu() {
-  // krim.move.ru returns HTTP 515 (server down) — disabled
-}
-
+// forum.kvartira-bez-agenta.ru — f=10: покупка вторичка, f=9: новостройки
 async function parseKvartiraBezAgenta() {
-  // f=10: buying secondary market, f=9: buying new construction
-  const sections = [10, 9];
-  for (const f of sections) {
+  for (const f of [10, 9]) {
     try {
       const { data } = await axios.get(
         `https://forum.kvartira-bez-agenta.ru/viewforum.php?f=${f}`,
@@ -35,7 +26,6 @@ async function parseKvartiraBezAgenta() {
         const title = titleEl.text().trim();
         const href = titleEl.attr('href') || '';
         const url = href.startsWith('http') ? href : `https://forum.kvartira-bez-agenta.ru/${href}`;
-
         if (isLead(title)) {
           const isNew = saveLead('Квартира без агента', title, url);
           if (isNew) { notify('Квартира без агента', title, url); found++; }
@@ -50,10 +40,84 @@ async function parseKvartiraBezAgenta() {
   }
 }
 
+// Яндекс.Кью — поиск вопросов про покупку недвижимости в Крыму
+async function parseYandexQ() {
+  const queries = [
+    'купить квартиру крым',
+    'купить дом крым',
+    'переезд в крым недвижимость',
+    'недвижимость ялта купить',
+  ];
+
+  let found = 0;
+  for (const q of queries) {
+    try {
+      const { data } = await axios.get(
+        `https://yandex.ru/q/search/?text=${encodeURIComponent(q)}`,
+        { headers: HEADERS, timeout: 12000 }
+      );
+      const $ = cheerio.load(data);
+
+      // Яндекс.Кью: вопросы в выдаче
+      $('a[href*="/question/"]').each((_, el) => {
+        const title = $(el).text().trim();
+        const href = $(el).attr('href') || '';
+        if (!title || title.length < 15) return;
+        const url = href.startsWith('http') ? href : `https://yandex.ru${href}`;
+        if (isLead(title, '')) {
+          const isNew = saveLead('Яндекс.Кью', title, url);
+          if (isNew) { notify('Яндекс.Кью', title, url); found++; }
+        }
+      });
+    } catch (e) {
+      // Яндекс часто отдаёт captcha — не шумим в логах
+      if (!e.message.includes('403') && !e.message.includes('timeout')) {
+        console.error(`[yandex-q] Error "${q}": ${e.message}`);
+      }
+    }
+    await new Promise(r => setTimeout(r, 3000 + Math.random() * 2000));
+  }
+  if (found > 0) console.log(`[yandex-q] Found ${found} new leads`);
+}
+
+// Пикабу — поиск постов по тегам про переезд/покупку в Крыму
+async function parsePikabu() {
+  const tags = ['Крым', 'Переезд', 'Недвижимость'];
+  let found = 0;
+
+  for (const tag of tags) {
+    try {
+      const { data } = await axios.get(
+        `https://pikabu.ru/tag/${encodeURIComponent(tag)}/new`,
+        { headers: HEADERS, timeout: 12000 }
+      );
+      const $ = cheerio.load(data);
+
+      // Pikabu: заголовки постов
+      $('h2.story__title a, .story__title-link').each((_, el) => {
+        const title = $(el).text().trim();
+        const href = $(el).attr('href') || '';
+        if (!title || title.length < 15) return;
+        const url = href.startsWith('http') ? href : `https://pikabu.ru${href}`;
+        if (isLead(title, tag)) {
+          const isNew = saveLead('Пикабу', title, url);
+          if (isNew) { notify('Пикабу', title, url); found++; }
+        }
+      });
+    } catch (e) {
+      if (!e.message.includes('timeout') && !e.message.includes('403')) {
+        console.error(`[pikabu] Error tag "${tag}": ${e.message}`);
+      }
+    }
+    await new Promise(r => setTimeout(r, 2000 + Math.random() * 1000));
+  }
+  if (found > 0) console.log(`[pikabu] Found ${found} new leads`);
+}
+
 async function parseAll() {
-  await parseRestate();
-  await parseMoveRu();
   await parseKvartiraBezAgenta();
+  await parseYandexQ();
+  await parsePikabu();
 }
 
 export function startForumParsers(intervalMs = 60 * 60 * 1000) {

@@ -14,18 +14,20 @@ const SESSION_FILE = join(__dirname, '../data/session.txt');
 
 // Queries to find new groups to join
 const SEARCH_QUERIES = [
-  // Крым
+  // Крым — недвижимость
   'недвижимость крым', 'квартиры крым', 'купить квартиру крым',
   'недвижимость ялта', 'недвижимость севастополь', 'недвижимость симферополь',
-  'переезд крым', 'релокация крым', 'жизнь в крыму', 'переезд в крым',
-  // Москва и вся Россия
-  'недвижимость москва', 'купить квартиру москва', 'недвижимость инвестиции',
-  'переезд юг', 'переезд море', 'недвижимость у моря',
-  'инвестиции в недвижимость', 'купить квартиру у моря',
-  'недвижимость краснодар', 'недвижимость сочи', 'недвижимость санкт петербург',
-  'переезд на юг', 'куплю квартиру', 'ищу недвижимость',
-  // Города Крыма (для поиска местных чатов)
+  'недвижимость феодосия', 'недвижимость евпатория', 'недвижимость керчь',
+  // Переезд и жизнь
+  'переезд крым', 'жизнь в крыму', 'переезд в крым', 'релокация крым',
+  'переехать в крым', 'переезд ялта', 'крым чат жители',
+  // Города Крыма
   'ялта чат', 'севастополь чат', 'симферополь чат', 'алушта чат',
+  'феодосия чат', 'евпатория чат', 'керчь чат',
+  // Россия — покупатели у моря
+  'недвижимость у моря', 'купить квартиру у моря', 'переезд на юг',
+  'переезд море', 'недвижимость сочи', 'недвижимость краснодар',
+  'инвестиции в недвижимость', 'куплю квартиру', 'ищу недвижимость',
 ];
 
 // Known groups to join immediately (only those that actually exist)
@@ -33,58 +35,112 @@ const SEED_GROUPS = [
   // Крым — недвижимость
   'krimrealty', 'nedvigimost_krym', 'krym_kvartiry',
   'yalta_realty', 'sevastopol_nedvigimost', 'crimea_invest',
+  // Крым — переезд и жизнь (там живут будущие покупатели)
+  'pereezd_krym',       // Переезд в Крым
+  'krym_pereezd',       // Крым — переезд
+  'jizn_v_krymu',       // Жизнь в Крыму
+  'crimea_life_chat',   // Жизнь в Крыму чат
+  'krym_novosely',      // Новосёлы Крыма
   // Крым — общие чаты с живой аудиторией
-  'mosttalk',         // Общий чат Крыма — туристы и переезжающие
-  'crimea_topchat',   // Крым. Чат
-  'Krym_Turist_chat', // Жильё и отдых
-  // Москва и общероссийские
+  'mosttalk',           // Общий чат Крыма
+  'crimea_topchat',     // Крым. Чат
+  'Krym_Turist_chat',   // Жильё и отдых
+  // Города Крыма — местные чаты
+  'yalta_chat',         // Ялта чат
+  'alushta_chat',       // Алушта
+  'feodosiya_chat',     // Феодосия
+  'evpatoria_chat',     // Евпатория
+  // Россия — покупатели у моря
   'realty_moscow', 'nedvigimost_rossii', 'investicii_nedvigimost',
   'pereezd_na_yug', 'kvartira_u_morya', 'realty_invest_ru',
+  'kupit_kvartiru_more', // Купить квартиру у моря
 ];
 
-// Targeted global search queries — combined buyer + Crimea
+// Targeted global search queries — combined buyer intent + Crimea
 const GLOBAL_QUERIES = [
+  // Прямые запросы покупки — квартиры
   'куплю квартиру крым',
-  'куплю дом крым',
-  'ищу квартиру крым',
-  'купить недвижимость крым',
-  'ищу жильё крым',
   'куплю квартиру ялта',
   'куплю квартиру севастополь',
   'куплю квартиру симферополь',
   'куплю квартиру алушта',
+  'куплю квартиру феодосия',
+  'куплю квартиру евпатория',
+  'куплю квартиру керчь',
+  // Прямые запросы покупки — дома и участки
+  'куплю дом крым',
+  'куплю дом ялта',
+  'куплю дом севастополь',
+  'куплю участок крым',
+  'куплю участок ялта',
+  // Поиск жилья
+  'ищу квартиру крым',
+  'ищу жильё крым',
+  'ищу недвижимость крым',
+  'нужна квартира крым',
+  'нужна квартира ялта',
+  // Намерение купить
+  'купить недвижимость крым',
   'хочу купить крым',
+  'хочу купить квартиру ялта',
+  'хочу купить квартиру севастополь',
+  'рассматриваю крым',
+  'рассматриваю недвижимость крым',
+  // Ипотека
+  'ипотека крым квартира',
+  'ипотека ялта купить',
+  // Переезд с покупкой жилья
   'переезжаем в крым',
   'переезжаю в крым',
-  'рассматриваю крым',
+  'переезжаю ялта жильё',
+  'переезд крым купить квартиру',
+  // Бюджет
   'бюджет крым квартира',
   'бюджет ялта купить',
-  'ищу участок крым',
-  'куплю дом ялта',
 ];
+
+const withTimeout = (promise, ms) => Promise.race([
+  promise,
+  new Promise((_, reject) => setTimeout(() => reject(new Error('QUERY_TIMEOUT')), ms)),
+]);
 
 async function globalSearch(client) {
   console.log('[telegram] Running global search...');
   let found = 0;
-  const since = Math.floor((Date.now() - 48 * 60 * 60 * 1000) / 1000); // last 48h
+
+  const forwardChatId = process.env.FORWARD_CHAT_ID;
+  // Strip -100 prefix to get raw MTProto channel_id for comparison
+  const ownChatIdStr = forwardChatId ? String(forwardChatId).replace(/^-100/, '') : '';
+
+  // Reconnect before search — update loop timeouts can leave connection stale
+  try { await client.connect(); } catch {}
 
   for (const query of GLOBAL_QUERIES) {
     try {
-      const result = await client.invoke(new Api.messages.SearchGlobal({
-        q: query,
-        filter: new Api.InputMessagesFilterEmpty(),
-        minDate: since,
-        maxDate: 0,
-        offsetRate: 0,
-        offsetPeer: new Api.InputPeerEmpty(),
-        offsetId: 0,
-        limit: 100,
-      }));
+      // No minDate — deduplication is handled by hash in DB.
+      // Buyer messages appear every few days, not hourly.
+      const result = await withTimeout(
+        client.invoke(new Api.messages.SearchGlobal({
+          q: query,
+          filter: new Api.InputMessagesFilterEmpty(),
+          minDate: 0,
+          maxDate: 0,
+          offsetRate: 0,
+          offsetPeer: new Api.InputPeerEmpty(),
+          offsetId: 0,
+          limit: 100,
+        })),
+        20000 // 20s per query max
+      );
 
       for (const msg of result.messages || []) {
         if (!msg.message) continue;
         const peerId = msg.peerId;
         const chatId = peerId?.channelId || peerId?.chatId;
+
+        // Skip our own notification group to avoid circular re-notification
+        if (ownChatIdStr && String(chatId) === ownChatIdStr) continue;
+
         const chat = (result.chats || []).find(c => c.id?.toString() === chatId?.toString());
         const groupTitle = chat?.title || '';
         const username = chat?.username || '';
@@ -100,8 +156,9 @@ async function globalSearch(client) {
         }
       }
     } catch (e) {
-      if (e.message && !e.message.includes('FLOOD') && !e.message.includes('slowmode')) {
-        console.error(`[telegram] Global search error "${query}": ${e.message}`);
+      const msg = e.message || '';
+      if (!msg.includes('FLOOD') && !msg.includes('slowmode') && !msg.includes('QUERY_TIMEOUT')) {
+        console.error(`[telegram] Global search error "${query}": ${msg}`);
       }
     }
     await new Promise(r => setTimeout(r, 2000 + Math.random() * 1000));

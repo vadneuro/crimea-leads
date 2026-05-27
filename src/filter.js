@@ -39,6 +39,17 @@ const SELLER_KEYWORDS = [
 // Negation patterns — "не куплю", "не хочу купить" etc.
 const NEGATION_RE = /не\s+(куплю|хочу|буду|стану|планирую|готов|готова|рассматрив|собираюсь)/i;
 
+// Real estate object must appear in text — eliminates "хочу купить парфюм", news, courses, etc.
+// Uses specific stems/suffixes to avoid false matches on "домой", "участие", "студент".
+const REALTY_RE = /квартир|апартамент|студи[яеюи]|комнат[аеуы]|недвижим|жильё|жилье|жилплощ|новостройк|коттедж|таунхаус|участо[кке]|земельн|дач[ауеи]|(?:^|\s)дом(?:\s|,|$)/im;
+
+// Match keyword requiring full word boundary (no Cyrillic before or after).
+// Prevents "рассматривают"→"рассматриваю", "окупить"→"купить", etc.
+function matchesKeyword(text, keyword) {
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp('(?<![а-яёА-ЯЁ])' + escaped + '(?![а-яёА-ЯЁ])', 'i').test(text);
+}
+
 export function isCrimeaGroup(title) {
   if (!title) return false;
   const lower = title.toLowerCase();
@@ -53,19 +64,23 @@ export function isLead(text, groupTitle = '') {
   const mentions = (text.match(/@\w+/g) || []).length;
   if (mentions >= 3) return false;
 
+  // Must mention a real estate object — rejects perfume/courses/news/roads
+  if (!REALTY_RE.test(text)) return false;
+
   const hasSeller = SELLER_KEYWORDS.some(kw => lower.includes(kw));
   if (hasSeller) return false;
 
   // Negation: "не куплю", "не хочу купить"
   if (NEGATION_RE.test(text)) return false;
 
-  const hasBuyer = BUYER_KEYWORDS.some(kw => lower.includes(kw));
+  // Word-boundary match — avoids "рассматривают"→"рассматриваю", "окупить"→"купить"
+  const hasBuyer = BUYER_KEYWORDS.some(kw => matchesKeyword(lower, kw));
   if (!hasBuyer) return false;
 
-  // From a Crimea group → buyer intent alone is enough
+  // From a Crimea group → real estate buyer intent is enough
   if (isCrimeaGroup(groupTitle)) return true;
 
-  // Otherwise require Crimea keyword in the message
+  // Otherwise require Crimea keyword in the message text
   return CRIMEA_KEYWORDS.some(kw => lower.includes(kw));
 }
 
